@@ -1,0 +1,223 @@
+# Load packages
+
+library(httr)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(zoo)
+library(ggplot2)
+library(hrbrthemes)
+
+# Fetch COVID-19 data in Regional Level DKI Jakarta
+
+# In this level, we will inspect DKI Jakarta data
+
+resp <- GET("https://data.covid19.go.id/public/api/prov_detail_DKI_JAKARTA.json")
+status_code(resp)
+
+cov_prov_raw <- content(resp, as = "parsed", simplifyVector = TRUE)
+str(cov_prov_raw, max.level = 2, vec.len = 3)
+
+# Inspect the daily recovered cases
+
+cov_prov_daily <-
+  cov_prov_raw$list_perkembangan %>%
+  transmute(
+    date = as.POSIXct(tanggal/1000, origin = "1970-01-01") %>%
+      as.Date(),
+    newcase = KASUS,
+    recovered = SEMBUH,
+    death = MENINGGAL
+    )
+
+glimpse(cov_prov_daily)
+
+# Turn table into graph!
+
+cov_prov_daily %>%
+  ggplot(aes(date, recovered)) +
+  geom_col(fill = "firebrick3") +
+  scale_x_date(
+    breaks = "2 weeks",
+    guide = guide_axis(check.overlap = TRUE, n.dodge = 2),
+    labels = scales::label_date(format = "%e %b"),
+    expand = c(0.005, 0.005)
+  ) +
+  labs(
+    x = NULL,
+    y = "Number of cases",
+    title = "The Daily COVID-19 Recovered Cases in DKI Jakarta",
+    subtitle = "The highest COVID-19 recovered cases happened in 24th august 2020",
+    caption = "Data source: covid.19.go.id"
+  ) +
+  theme_ipsum_tw(
+    base_size = 13,
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+  ) +
+  theme(plot.title.position = "plot")
+  
+# Transforming the daily recovered cases into weekly recovered cases
+# Load packages
+
+library(httr)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(zoo)
+library(ggplot2)
+library(hrbrthemes)
+
+# Transform daily cases into weekly cases
+
+cov_prov_weekly <-
+  cov_prov_daily %>%
+  group_by(
+    year = year(date),
+    week = week(date)
+  ) %>%
+  summarise(
+    across(c(newcase:death), ~sum(.x, na.rm = TRUE))
+  ) %>%
+  ungroup()
+
+glimpse(cov_prov_weekly)
+
+# Turn table into graph
+
+cov_prov_weekly %>%
+  ggplot(aes(week, recovered)) +
+  geom_col(fill = "firebrick3") +
+  labs(
+    x = NULL,
+    y = "Number of cases",
+    title = "The Weekly COVID-19 Recovered Cases in DKI Jakarta",
+    subtitle = "The highest COVID-19 recovered cases happened in 39th week",
+    caption = "Data source: covid.19.go.id"
+  ) +
+  theme_ipsum_tw(
+    base_size = 13,
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+  ) +
+  theme(plot.title.position = "plot")
+  
+  # Comparing the weekly cases 
+  # Load packages
+
+library(httr)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(zoo)
+library(ggplot2)
+library(hrbrthemes)
+
+# Is this week better than a last week?
+
+cov_prov_weekly_comparison <-
+  cov_prov_weekly %>%
+  transmute(
+    year,
+    week,
+    recovered,
+    recovered_lastweek = dplyr::lag(recovered,1),
+    recovered_lastweek = replace_na(recovered_lastweek,0),
+    is_better = recovered < recovered_lastweek
+  )
+glimpse(cov_prov_weekly_comparison)
+
+cov_prov_weekly_comparison %>%
+  count(is_better)
+tail(cov_prov_weekly_comparison)
+
+# Transform table into graph
+
+cov_prov_weekly_comparison %>%
+  ggplot(aes(week, recovered, fill = is_better)) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_fill_manual(values = c("TRUE" = "seagreen3", "FALSE" = "salmon")) +
+  labs(
+    x = NULL,
+    y = "Number of cases",
+    title = "The Weekly COVID-19 Recovered Cases in DKI Jakarta",
+    subtitle = "The green column shows the addition of death cases less than a week earlier",
+    caption = "Data source: covid.19.go.id"
+  ) +
+  theme_ipsum_tw(
+    base_size = 13,
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+  ) +
+  theme(plot.title.position = "plot")
+  
+# Daily COVID-19 cases in DKI Jakarta using Moving Average 3 Days
+# Load Package
+
+library(httr)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(zoo)
+library(ggplot2)
+library(hrbrthemes)
+
+# Fetch COVID-19 data in regional level DKI Jakarta
+
+# In this example, we will inspect DKI Jakarta
+
+resp <- GET("https://data.covid19.go.id/public/api/prov_detail_DKI_JAKARTA.json")
+status_code(resp)
+
+cov_prov_raw <- content(resp, as = "parsed", simplyfyVector = TRUE)
+str(cov_prov_raw, max.level = 2, vec.len =3)
+
+# Daily cases, rolling 3 Day Average
+
+cov_prov_daily %>%
+  mutate(
+    across(newcase:death, ~rollmean(.x, k = 3, fill = NA))
+  ) %>%
+  pivot_longer(
+    cols = newcase:death,
+    names_to = "status",
+    values_to = "rollmean3day"
+  ) %>%
+  mutate(
+    status = factor(status, levels = c("newcase", "recovered", "death"), labels = c("Positif", "Sembuh", "Meninggal"))
+  ) %>%
+  ggplot(aes(date, rollmean3day, colour = status)) +
+  facet_wrap(~status, ncol = 1, scales = "free_y") +
+  geom_line(size = 1.1, show.legend = FALSE) +
+  scale_x_date(
+    breaks = "10 days",
+    guide = guide_axis(check.overlap = TRUE, n.dodge = 2),
+    labels = scales::label_date(format = "%e %b"),
+    expand = c(0.005, 0.005)
+  ) + 
+  scale_y_continuous(position = "right") +
+  scale_colour_manual(
+    values = c("firebrick3", "seagreen2", "darkslategray4")
+  ) +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Daily COVID-19 cases in DKI Jakarta using Moving Average 3 Days",
+    subtitle = "The number of cases on the y-axis is not made uniform across the case status panels",
+    caption = "Data source: covid.19.go.id"
+  ) +
+  theme_ipsum_tw(
+    base_size = 13,
+    plot_title_size = 21,
+    strip_text_face = "italic",
+    grid = FALSE,
+    ticks = TRUE,
+  ) +
+  theme(plot.title.position = "plot")
+  
+  # The author acknowledge this code from aswansyahputra (https://gist.github.com/aswansyahputra/acc249f6ad716ae007f8879c0ad8f353)
+
